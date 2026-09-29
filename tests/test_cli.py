@@ -1,9 +1,11 @@
+import os
+
 from sta_ingest import cli
 
 
 def test_end_to_end_with_local_files(conn, fixtures, monkeypatch):
-    url = conn.info.dsn
-    monkeypatch.setenv("DATABASE_URL", url)
+    # conn.info.dsn hides the password, so reuse the original URL
+    monkeypatch.setenv("DATABASE_URL", os.environ["TEST_DATABASE_URL"])
     cli.main(["migrate"])
     cli.main(["static", "--file", str(fixtures / "gtfs_sample.zip")])
     cli.main(["static", "--file", str(fixtures / "gtfs_sample.zip")])  # skipped: already loaded
