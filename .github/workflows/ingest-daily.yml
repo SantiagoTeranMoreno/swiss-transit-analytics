@@ -1,0 +1,56 @@
+name: Ingest daily data (timetable + Ist-Daten)
+
+on:
+  schedule:
+    - cron: "30 6 * * *"  # 08:30 Swiss summer time, after the previous day's file is published
+  workflow_dispatch:
+    inputs:
+      date:
+        description: "Service day to (re)load, YYYY-MM-DD (default: yesterday)"
+        required: false
+
+concurrency:
+  group: ingest-daily
+  cancel-in-progress: false
+
+jobs:
+  daily:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      STA_USER_AGENT: swiss-transit-analytics (+https://github.com/${{ github.repository }})
+    steps:
+      - name: Check secrets
+        id: secrets
+        run: |
+          if [ -z "$DATABASE_URL" ]; then
+            echo "::notice::DATABASE_URL not configured, skipping."
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/checkout@v4
+        if: steps.secrets.outputs.ready == 'true'
+      - uses: actions/setup-python@v5
+        if: steps.secrets.outputs.ready == 'true'
+        with:
+          python-version: "3.12"
+          cache: pip
+      - if: steps.secrets.outputs.ready == 'true'
+        run: pip install -e .
+      - name: Apply migrations
+        if: steps.secrets.outputs.ready == 'true'
+        run: sta-ingest migrate
+      - name: Load timetable dimensions (skipped when the latest file is already loaded)
+        if: steps.secrets.outputs.ready == 'true'
+        run: sta-ingest static
+      - name: Aggregate Ist-Daten
+        if: steps.secrets.outputs.ready == 'true'
+        env:
+          DAY: ${{ inputs.date }}
+        run: |
+          if [ -n "$DAY" ]; then sta-ingest istdaten --date "$DAY" --force; else sta-ingest istdaten; fi
+      - name: Prune old detail rows
+        if: steps.secrets.outputs.ready == 'true'
+        run: sta-ingest prune

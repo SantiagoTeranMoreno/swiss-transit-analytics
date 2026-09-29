@@ -1,0 +1,40 @@
+name: Ingest live delays (GTFS-RT)
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"  # GitHub may delay scheduled runs by several minutes
+  workflow_dispatch:
+
+concurrency:
+  group: ingest-realtime
+  cancel-in-progress: false
+
+jobs:
+  realtime:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      OTD_API_KEY: ${{ secrets.OTD_API_KEY }}
+      STA_USER_AGENT: swiss-transit-analytics (+https://github.com/${{ github.repository }})
+    steps:
+      - name: Check secrets
+        id: secrets
+        run: |
+          if [ -z "$DATABASE_URL" ] || [ -z "$OTD_API_KEY" ]; then
+            echo "::notice::DATABASE_URL or OTD_API_KEY not configured, skipping."
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/checkout@v4
+        if: steps.secrets.outputs.ready == 'true'
+      - uses: actions/setup-python@v5
+        if: steps.secrets.outputs.ready == 'true'
+        with:
+          python-version: "3.12"
+          cache: pip
+      - if: steps.secrets.outputs.ready == 'true'
+        run: pip install -e .
+      - if: steps.secrets.outputs.ready == 'true'
+        run: sta-ingest realtime

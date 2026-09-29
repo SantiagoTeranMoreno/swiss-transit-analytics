@@ -1,0 +1,93 @@
+"""Locating and downloading files from opentransportdata.swiss (CKAN catalogue + API)."""
+
+from __future__ import annotations
+
+import datetime as dt
+import logging
+import shutil
+import tempfile
+from dataclasses import dataclass
+from pathlib import Path
+
+import requests
+
+from .config import CKAN_BASE_URL, GTFS_RT_URL, ISTDATEN_PACKAGE_ID
+
+log = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class Resource:
+    name: str
+    url: str
+    created: str
+
+
+def session(user_agent: str) -> requests.Session:
+    s = requests.Session()
+    s.headers.update({"User-Agent": user_agent, "Accept-Encoding": "br, gzip, deflate"})
+    return s
+
+
+def package_resources(http: requests.Session, package_id: str) -> list[Resource]:
+    resp = http.get(f"{CKAN_BASE_URL}/package_show", params={"id": package_id}, timeout=60)
+    resp.raise_for_status()
+    body = resp.json()
+    if not body.get("success"):
+        raise RuntimeError(f"CKAN package_show failed for {package_id}: {body.get('error')}")
+    return [
+        Resource(
+            name=r.get("name") or r.get("url", "").rsplit("/", 1)[-1],
+            url=r["url"],
+            created=r.get("created") or "",
+        )
+        for r in body["result"].get("resources", [])
+        if r.get("url")
+    ]
+
+
+def timetable_package_id(today: dt.date) -> str:
+    """The Swiss timetable year switches in mid-December; its GTFS dataset is named by year."""
+    year = today.year + 1 if (today.month == 12 and today.day >= 14) else today.year
+    return f"timetable-{year}-gtfs2020"
+
+
+def latest_gtfs_static(http: requests.Session, package_id: str) -> Resource:
+    zips = [r for r in package_resources(http, package_id) if r.url.lower().endswith(".zip")]
+    if not zips:
+        raise RuntimeError(f"no GTFS zip found in dataset {package_id}")
+    return max(zips, key=lambda r: (r.created, r.name))
+
+
+def istdaten_for_day(http: requests.Session, day: dt.date) -> Resource:
+    """Find the daily Ist-Daten CSV for a service day (named like ``2026-09-28_istdaten.csv``)."""
+    stamp = day.isoformat()
+    for r in package_resources(http, ISTDATEN_PACKAGE_ID):
+        if stamp in r.name or stamp in r.url:
+            return r
+    raise LookupError(f"no Ist-Daten file for {stamp} in dataset {ISTDATEN_PACKAGE_ID} (yet)")
+
+
+def download(http: requests.Session, url: str, dest_dir: Path | None = None) -> Path:
+    dest_dir = dest_dir or Path(tempfile.mkdtemp(prefix="sta-"))
+    dest = dest_dir / (url.rsplit("/", 1)[-1].split("?", 1)[0] or "download")
+    log.info("downloading %s", url)
+    with http.get(url, stream=True, timeout=300) as resp:
+        resp.raise_for_status()
+        resp.raw.decode_content = True
+        with dest.open("wb") as fh:
+            shutil.copyfileobj(resp.raw, fh, length=1 << 20)
+    log.info("saved %s (%.1f MB)", dest, dest.stat().st_size / 1e6)
+    return dest
+
+
+def fetch_gtfs_rt(http: requests.Session, api_key: str) -> bytes:
+    """Fetch the national GTFS-RT TripUpdates feed (protobuf). Limit: 2 requests/minute."""
+    resp = http.get(
+        GTFS_RT_URL,
+        headers={"Authorization": f"Bearer {api_key}"},
+        timeout=120,
+        allow_redirects=True,
+    )
+    resp.raise_for_status()
+    return resp.content
