@@ -46,3 +46,23 @@ def test_write(conn, fixtures):
     ).fetchone()
     assert row == (4, 2, 1, 1)
     assert conn.execute("select count(*) from transit.line_day_stats").fetchone()[0] == 2
+
+
+def test_migration_merges_suffixed_station_numbers(conn):
+    from sta_ingest import db
+
+    conn.execute("delete from public.schema_migrations where filename like '002_%'")
+    rows = [(8593617, 10, 8, 6, 100, 200), (859361701, 5, 4, 1, 400, 900)]
+    for uic, events, measured, on_time, delay_sum, delay_max in rows:
+        conn.execute(
+            "insert into transit.stop_day_stats values"
+            " ('2026-09-29', %s, 'bus', %s, %s, %s, 0, 0, 0, %s, %s)",
+            (uic, events, measured, on_time, delay_sum, delay_max),
+        )
+    conn.commit()
+    db.migrate(conn)
+    got = conn.execute(
+        "select uic, events, measured, on_time, delay_sum_s, delay_max_s"
+        " from transit.stop_day_stats"
+    ).fetchall()
+    assert got == [(8593617, 15, 12, 7, 500, 900)]

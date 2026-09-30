@@ -80,9 +80,15 @@ def uic_from_stop_id(stop_id: str | None) -> int | None:
 
 
 def uic_from_bpuic(value: str | None, sloid: str | None = None) -> int | None:
-    """Station number from Ist-Daten: BPUIC is usually numeric, but may carry a SLOID in v2."""
+    """Station number from Ist-Daten: BPUIC is usually numeric, but may carry a SLOID in v2.
+
+    Some stops carry a 9-digit BPUIC: the 7-digit station number plus a 2-digit suffix
+    (``859361701`` -> ``8593617``), which would otherwise match no station.
+    """
     v = (value or "").strip()
     if v.isdigit():
         n = int(v)
+        if n >= 100_000_000:
+            return n // 100
         return n if n >= 1_000_000 else 8_500_000 + n
     return uic_from_stop_id(v) or uic_from_stop_id(sloid)
