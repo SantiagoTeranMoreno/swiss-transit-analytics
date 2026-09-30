@@ -53,13 +53,15 @@ def cmd_istdaten(settings: Settings, args: argparse.Namespace) -> None:
             if args.file:
                 stats = istdaten.aggregate_file(Path(args.file))
             else:
+                # Download to disk first: a daily file is ~1 GB, and reading the HTTP
+                # stream directly broke when the connection closed at end of body.
                 http = sources.session(settings.user_agent)
                 res = sources.istdaten_for_day(http, day, settings.require_ckan_api_key())
-                log.info("streaming %s", res.url)
-                with http.get(res.url, stream=True, timeout=600) as resp:
-                    resp.raise_for_status()
-                    resp.raw.decode_content = True
-                    stats = istdaten.aggregate_stream(resp.raw)
+                path = sources.download(http, res.url)
+                try:
+                    stats = istdaten.aggregate_file(path)
+                finally:
+                    path.unlink(missing_ok=True)
             run.rows_in = stats.rows_in
             run.rows_out = istdaten.write(conn, stats)
 

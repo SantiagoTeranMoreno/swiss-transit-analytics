@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import datetime as dt
 import logging
-import shutil
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
@@ -100,9 +99,9 @@ def download(http: requests.Session, url: str, dest_dir: Path | None = None) -> 
     log.info("downloading %s", url)
     with http.get(url, stream=True, timeout=300) as resp:
         _check(resp, f"download {url}")
-        resp.raw.decode_content = True
         with dest.open("wb") as fh:
-            shutil.copyfileobj(resp.raw, fh, length=1 << 20)
+            for chunk in resp.iter_content(chunk_size=1 << 20):
+                fh.write(chunk)
     log.info("saved %s (%.1f MB)", dest, dest.stat().st_size / 1e6)
     return dest
 
