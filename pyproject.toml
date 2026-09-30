@@ -12,6 +12,7 @@ license = { text = "MIT" }
 dependencies = [
     "psycopg[binary]>=3.1",
     "requests>=2.31",
+    "brotli>=1.1",  # the API answers with brotli; requests only decodes it when installed
     "gtfs-realtime-bindings>=1.0",
 ]
 

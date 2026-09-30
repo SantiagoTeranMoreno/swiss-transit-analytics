@@ -28,7 +28,7 @@ def cmd_static(settings: Settings, args: argparse.Namespace) -> None:
         path, key = Path(args.file), Path(args.file).name
     else:
         package = args.package or sources.timetable_package_id(dt.date.today())
-        res = sources.latest_gtfs_static(http, package)
+        res = sources.latest_gtfs_static(http, package, settings.require_ckan_api_key())
         path, key = None, res.name
     with db.connect(settings.require_database_url()) as conn:
         if not args.force and db.already_loaded(conn, "gtfs_static", key):
@@ -54,7 +54,7 @@ def cmd_istdaten(settings: Settings, args: argparse.Namespace) -> None:
                 stats = istdaten.aggregate_file(Path(args.file))
             else:
                 http = sources.session(settings.user_agent)
-                res = sources.istdaten_for_day(http, day)
+                res = sources.istdaten_for_day(http, day, settings.require_ckan_api_key())
                 log.info("streaming %s", res.url)
                 with http.get(res.url, stream=True, timeout=600) as resp:
                     resp.raise_for_status()

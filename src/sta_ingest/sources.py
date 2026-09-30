@@ -29,19 +29,34 @@ def session(user_agent: str) -> requests.Session:
     return s
 
 
-def package_resources(http: requests.Session, package_id: str) -> list[Resource]:
-    resp = http.get(f"{CKAN_BASE_URL}/package_show", params={"id": package_id}, timeout=60)
+def _check(resp: requests.Response, what: str) -> None:
+    if resp.status_code in (401, 403):
+        raise PermissionError(
+            f"{what}: HTTP {resp.status_code}. Check that the API key is valid and subscribed "
+            f"to this API in the API Manager. Response: {resp.text[:300]!r}"
+        )
     resp.raise_for_status()
+
+
+def package_resources(http: requests.Session, package_id: str, api_key: str) -> list[Resource]:
+    resp = http.get(
+        f"{CKAN_BASE_URL}/package_show",
+        params={"id": package_id},
+        headers={"Authorization": f"Bearer {api_key}"},
+        timeout=60,
+    )
+    _check(resp, f"CKAN package_show {package_id}")
     body = resp.json()
-    if not body.get("success"):
+    if body.get("success") is False:
         raise RuntimeError(f"CKAN package_show failed for {package_id}: {body.get('error')}")
+    result = body.get("result", body)
     return [
         Resource(
             name=r.get("name") or r.get("url", "").rsplit("/", 1)[-1],
             url=r["url"],
             created=r.get("created") or "",
         )
-        for r in body["result"].get("resources", [])
+        for r in result.get("resources", [])
         if r.get("url")
     ]
 
@@ -52,17 +67,18 @@ def timetable_package_id(today: dt.date) -> str:
     return f"timetable-{year}-gtfs2020"
 
 
-def latest_gtfs_static(http: requests.Session, package_id: str) -> Resource:
-    zips = [r for r in package_resources(http, package_id) if r.url.lower().endswith(".zip")]
+def latest_gtfs_static(http: requests.Session, package_id: str, api_key: str) -> Resource:
+    resources = package_resources(http, package_id, api_key)
+    zips = [r for r in resources if r.url.lower().split("?", 1)[0].endswith(".zip")]
     if not zips:
         raise RuntimeError(f"no GTFS zip found in dataset {package_id}")
     return max(zips, key=lambda r: (r.created, r.name))
 
 
-def istdaten_for_day(http: requests.Session, day: dt.date) -> Resource:
+def istdaten_for_day(http: requests.Session, day: dt.date, api_key: str) -> Resource:
     """Find the daily Ist-Daten CSV for a service day (named like ``2026-09-28_istdaten.csv``)."""
     stamp = day.isoformat()
-    for r in package_resources(http, ISTDATEN_PACKAGE_ID):
+    for r in package_resources(http, ISTDATEN_PACKAGE_ID, api_key):
         if stamp in r.name or stamp in r.url:
             return r
     raise LookupError(f"no Ist-Daten file for {stamp} in dataset {ISTDATEN_PACKAGE_ID} (yet)")
@@ -73,7 +89,7 @@ def download(http: requests.Session, url: str, dest_dir: Path | None = None) -> 
     dest = dest_dir / (url.rsplit("/", 1)[-1].split("?", 1)[0] or "download")
     log.info("downloading %s", url)
     with http.get(url, stream=True, timeout=300) as resp:
-        resp.raise_for_status()
+        _check(resp, f"download {url}")
         resp.raw.decode_content = True
         with dest.open("wb") as fh:
             shutil.copyfileobj(resp.raw, fh, length=1 << 20)
@@ -89,5 +105,10 @@ def fetch_gtfs_rt(http: requests.Session, api_key: str) -> bytes:
         timeout=120,
         allow_redirects=True,
     )
-    resp.raise_for_status()
+    _check(resp, "GTFS-RT")
+    ctype = resp.headers.get("Content-Type", "")
+    if "json" in ctype or "html" in ctype or resp.content[:1] in (b"{", b"<"):
+        raise RuntimeError(
+            f"GTFS-RT returned {ctype or 'text'} instead of protobuf: {resp.text[:300]!r}"
+        )
     return resp.content

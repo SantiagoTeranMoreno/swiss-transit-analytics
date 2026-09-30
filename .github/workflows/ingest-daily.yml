@@ -19,6 +19,8 @@ jobs:
     timeout-minutes: 45
     env:
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      OTD_API_KEY: ${{ secrets.OTD_API_KEY }}
+      OTD_CKAN_API_KEY: ${{ secrets.OTD_CKAN_API_KEY }}
       STA_USER_AGENT: swiss-transit-analytics (+https://github.com/${{ github.repository }})
     steps:
       - name: Check secrets
