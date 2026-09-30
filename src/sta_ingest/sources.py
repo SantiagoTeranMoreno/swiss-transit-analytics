@@ -52,13 +52,23 @@ def package_resources(http: requests.Session, package_id: str, api_key: str) -> 
     result = body.get("result", body)
     return [
         Resource(
-            name=r.get("name") or r.get("url", "").rsplit("/", 1)[-1],
+            name=_text(r.get("name")) or r["url"].rsplit("/", 1)[-1],
             url=r["url"],
-            created=r.get("created") or "",
+            created=_text(r.get("created")),
         )
         for r in result.get("resources", [])
-        if r.get("url")
+        if isinstance(r.get("url"), str) and r["url"]
     ]
+
+
+def _text(value: object) -> str:
+    """CKAN fields may be plain strings or multilingual dicts like {"de": ..., "en": ...}."""
+    if isinstance(value, dict):
+        for lang in ("en", "de", "fr", "it"):
+            if value.get(lang):
+                return str(value[lang])
+        return next((str(v) for v in value.values() if v), "")
+    return str(value) if value else ""
 
 
 def timetable_package_id(today: dt.date) -> str:
