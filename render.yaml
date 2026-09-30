@@ -1,0 +1,16 @@
+# Render blueprint for the analytics API (New > Blueprint, pick this repository).
+services:
+  - type: web
+    name: swiss-transit-api
+    runtime: python
+    plan: free
+    buildCommand: pip install ".[api]"
+    startCommand: uvicorn sta_api.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /api/health
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.12.7"
+      - key: DATABASE_URL  # Supabase session pooler URI, entered in the Render dashboard
+        sync: false
+      - key: STA_CORS_ORIGINS
+        value: "*"

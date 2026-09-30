@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "sta-ingest"
 version = "0.1.0"
-description = "Ingestion pipeline for Swiss public transport punctuality data (opentransportdata.swiss)"
+description = "Ingestion pipeline and analytics API for Swiss public transport punctuality (opentransportdata.swiss)"
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
@@ -17,7 +17,12 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8", "ruff>=0.5"]
+api = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.30",
+    "psycopg-pool>=3.2",
+]
+dev = ["pytest>=8", "ruff>=0.5", "httpx>=0.27"]
 
 [project.scripts]
 sta-ingest = "sta_ingest.cli:main"
