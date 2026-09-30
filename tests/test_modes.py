@@ -28,6 +28,7 @@ def test_uic_from_stop_id(stop_id, uic):
 def test_uic_from_bpuic():
     assert uic_from_bpuic("8503000") == 8503000
     assert uic_from_bpuic("3000") == 8503000
+    assert uic_from_bpuic("859361701") == 8593617  # station number + 2-digit suffix
     assert uic_from_bpuic("", "ch:1:sloid:7000:1:5") == 8507000
     assert uic_from_bpuic("ch:1:sloid:7000") == 8507000
 
